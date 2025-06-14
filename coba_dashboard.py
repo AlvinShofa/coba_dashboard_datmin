@@ -3,12 +3,13 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.cluster import KMeans
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, roc_curve, silhouette_score
 from sklearn.decomposition import PCA
-from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix, roc_curve, roc_auc_score, silhouette_score
 
 st.set_page_config(page_title="Disney Princess Dashboard", layout="wide")
 st.title("👑 Disney Princess Popularity Dashboard")
@@ -19,158 +20,152 @@ def load_data():
 
 df = load_data()
 
-# ---------------------------- DASHBOARD UMUM ----------------------------
-st.header("📊 Ringkasan Dataset")
-st.dataframe(df.head())
+# ---------------------------- DATA UNDERSTANDING ----------------------------
+st.header("📘 Data Understanding")
 
-# ---------------------------- K-MEANS CLUSTERING ----------------------------
-st.header("🔍 K-Means Clustering (Unsupervised Learning)")
+with st.expander("🔍 Informasi Umum Dataset"):
+    buffer = df.info(buf=None)
+    st.write(df.dtypes)
+    st.write(f"Jumlah baris: {df.shape[0]}")
+    st.write(f"Jumlah kolom: {df.shape[1]}")
+    st.write("Jumlah data null:")
+    st.dataframe(df.isnull().sum())
 
-all_numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
-default_features = ['PopularityScore', 'GoogleSearchIndex2024', 'RottenTomatoesScore', 'BoxOfficeMillions']
+with st.expander("📈 Statistik Deskriptif"):
+    st.dataframe(df.describe())
 
-selected_features = st.multiselect(
-    "📌 Pilih fitur numerik untuk clustering:",
-    all_numeric_cols,
-    default=default_features
+with st.expander("📊 Korelasi Antar Variabel Numerik"):
+    numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
+    fig, ax = plt.subplots(figsize=(12, 6))
+    sns.heatmap(df[numeric_cols].corr(), annot=True, cmap="coolwarm", ax=ax)
+    st.pyplot(fig)
+
+# ---------------------------- BOXPLOT OUTLIERS ----------------------------
+st.header("📦 Deteksi Outlier - Boxplot")
+
+selected_outlier_features = st.multiselect(
+    "Pilih fitur untuk visualisasi boxplot outlier:",
+    numeric_cols,
+    default=['PopularityScore', 'GoogleSearchIndex2024', 'BoxOfficeMillions']
 )
 
-if selected_features:
-    X = df[selected_features].dropna()
+if selected_outlier_features:
+    fig, axes = plt.subplots(nrows=1, ncols=len(selected_outlier_features), figsize=(5*len(selected_outlier_features), 5))
+    if len(selected_outlier_features) == 1:
+        axes = [axes]
+    for i, col in enumerate(selected_outlier_features):
+        sns.boxplot(y=df[col], ax=axes[i], color='lightblue')
+        axes[i].set_title(f'Boxplot: {col}')
+    st.pyplot(fig)
+else:
+    st.info("Pilih minimal satu fitur untuk ditampilkan sebagai boxplot.")
 
-    if X.empty:
-        st.warning("⚠️ Tidak ada data yang tersedia setelah menghapus nilai kosong.")
-        st.stop()
+# ---------------------------- K-MEANS CLUSTERING ----------------------------
+st.header("🔍 Unsupervised Learning - K-Means Clustering")
 
-    # Normalisasi
-    scaler = MinMaxScaler()
-    X_scaled = scaler.fit_transform(X)
+clustering_features = st.multiselect(
+    "Pilih fitur untuk proses clustering:",
+    ['PopularityScore', 'GoogleSearchIndex2024', 'RottenTomatoesScore', 'BoxOfficeMillions'],
+    default=['PopularityScore', 'GoogleSearchIndex2024', 'RottenTomatoesScore', 'BoxOfficeMillions']
+)
 
-    # Slider jumlah cluster
-    k = st.slider("🔢 Pilih jumlah cluster (K)", min_value=2, max_value=10, value=3)
+if clustering_features:
+    data_cluster = df[clustering_features].dropna()
+    scaler = StandardScaler()
+    data_scaled = scaler.fit_transform(data_cluster)
 
-    # KMeans
+    k = st.slider("Pilih jumlah klaster (k):", min_value=2, max_value=10, value=3)
     kmeans = KMeans(n_clusters=k, random_state=42, n_init='auto')
-    cluster_labels = kmeans.fit_predict(X_scaled)
-    df_clustered = df.loc[X.index].copy()
+    cluster_labels = kmeans.fit_predict(data_scaled)
+    df_clustered = data_cluster.copy()
     df_clustered["Cluster"] = cluster_labels
 
-    # Silhouette Score
-    score = silhouette_score(X_scaled, cluster_labels)
-    st.success(f"✅ Silhouette Score: {score:.3f} (Semakin mendekati 1 = semakin baik)")
+    silhouette = silhouette_score(data_scaled, cluster_labels)
+    st.success(f"Silhouette Score untuk k={k}: **{silhouette:.4f}**")
 
-    # Visualisasi PCA
-    st.subheader("📈 Visualisasi Clustering dengan PCA")
-    if len(selected_features) >= 2:
-        pca = PCA(n_components=2)
-        X_pca = pca.fit_transform(X_scaled)
-        fig, ax = plt.subplots()
-        scatter = ax.scatter(
-            X_pca[:, 0], X_pca[:, 1],
-            c=cluster_labels, cmap='tab10', s=60, edgecolor='k'
-        )
-        ax.set_title("Visualisasi PCA dari Hasil Clustering")
-        ax.set_xlabel("PCA Component 1")
-        ax.set_ylabel("PCA Component 2")
-        st.pyplot(fig)
-    else:
-        st.warning("⚠️ Pilih minimal 2 fitur untuk visualisasi.")
+    st.subheader("📊 Visualisasi Clustering (PCA 2D)")
+    pca = PCA(n_components=2)
+    pca_result = pca.fit_transform(data_scaled)
+    fig, ax = plt.subplots()
+    sns.scatterplot(x=pca_result[:, 0], y=pca_result[:, 1], hue=cluster_labels, palette='Set1', ax=ax)
+    ax.set_xlabel("PCA Component 1")
+    ax.set_ylabel("PCA Component 2")
+    ax.set_title("Visualisasi Cluster (PCA)")
+    st.pyplot(fig)
 
-    # Statistik tiap cluster
-    st.subheader("📊 Statistik Tiap Cluster")
-    for feature in selected_features:
-        st.markdown(f"#### Statistik: `{feature}`")
-        st.dataframe(df_clustered.groupby("Cluster")[feature].describe())
+    st.subheader("📌 Statistik Tiap Cluster")
+    st.dataframe(df_clustered.groupby("Cluster")[clustering_features].mean())
 
-    # Tabel akhir
-    st.subheader("📋 Data dengan Label Cluster")
-    st.dataframe(df_clustered[["PrincessName"] + selected_features + ["Cluster"]].reset_index(drop=True))
+    st.subheader("📁 Data dengan Label Klaster")
+    df["Cluster"] = cluster_labels
+    st.dataframe(df[['PrincessName'] + clustering_features + ['Cluster']])
 else:
-    st.warning("⚠️ Silakan pilih minimal satu fitur numerik terlebih dahulu.")
+    st.warning("Silakan pilih fitur untuk melanjutkan proses clustering.")
 
-# ---------------------------- SUPERVISED LEARNING ----------------------------
+# ---------------------------- LOGISTIC REGRESSION ----------------------------
 st.header("📉 Supervised Learning - Logistic Regression")
 
-# Mapping target
-st.subheader("🔧 Persiapan Data")
+# Preprocessing
 df['IsIconic'] = df['IsIconic'].map({'Yes': 1, 'No': 0})
-features_for_regression = [
+regression_features = [
     'PopularityScore', 'GoogleSearchIndex2024', 'RottenTomatoesScore', 'BoxOfficeMillions',
-    'IMDB_Rating', 'AvgScreenTimeMinutes', 'NumMerchItemsOnAmazon', 'InstagramFanPages',
-    'TikTokHashtagViewsMillions']
-target = 'IsIconic'
-
-X = df[features_for_regression].dropna()
-y = df.loc[X.index, target]
+    'IMDB_Rating', 'AvgScreenTimeMinutes', 'NumMerchItemsOnAmazon', 'InstagramFanPages', 'TikTokHashtagViewsMillions'
+]
+X = df[regression_features]
+y = df['IsIconic']
 
 # Split
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-st.write(f"Jumlah data latih: {X_train.shape[0]}")
-st.write(f"Jumlah data uji: {X_test.shape[0]}")
-st.dataframe(y_train.value_counts().rename("Jumlah").reset_index().rename(columns={"index": "IsIconic"}))
-
-# Normalisasi
 scaler = MinMaxScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-# Contoh hasil normalisasi
-st.subheader("🔍 Contoh Data Setelah Normalisasi")
-st.dataframe(pd.DataFrame(X_train_scaled, columns=features_for_regression).head())
-
-# Model Logistic Regression
+# Train model
 logreg = LogisticRegression(random_state=42, max_iter=1000)
 logreg.fit(X_train_scaled, y_train)
 y_pred = logreg.predict(X_test_scaled)
-y_pred_proba = logreg.predict_proba(X_test_scaled)[:, 1]
+y_proba = logreg.predict_proba(X_test_scaled)[:, 1]
 
-# Akurasi
-st.subheader("🎯 Akurasi Model")
-accuracy = logreg.score(X_test_scaled, y_test)
-st.write(f"Akurasi pada data uji: {accuracy:.2f}")
-
-# Classification Report
-st.subheader("📋 Laporan Klasifikasi")
+# Evaluation
+st.subheader("🎯 Evaluasi Model")
+st.write(f"Akurasi: **{logreg.score(X_test_scaled, y_test):.2f}**")
 st.text(classification_report(y_test, y_pred))
 
 # Confusion Matrix
-st.subheader("🧮 Confusion Matrix")
 conf_matrix = confusion_matrix(y_test, y_pred)
-fig3, ax3 = plt.subplots()
+fig2, ax2 = plt.subplots()
 sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues',
-            xticklabels=['Tidak Ikonik', 'Ikonik'],
-            yticklabels=['Tidak Ikonik', 'Ikonik'], ax=ax3)
-ax3.set_xlabel('Prediksi')
-ax3.set_ylabel('Aktual')
-ax3.set_title('Confusion Matrix')
-st.pyplot(fig3)
+            xticklabels=['Bukan Ikonik', 'Ikonik'],
+            yticklabels=['Bukan Ikonik', 'Ikonik'],
+            ax=ax2)
+ax2.set_xlabel('Prediksi')
+ax2.set_ylabel('Aktual')
+ax2.set_title('Confusion Matrix')
+st.pyplot(fig2)
 
 # ROC Curve
-st.subheader("📊 Kurva ROC dan AUC")
-fpr, tpr, thresholds = roc_curve(y_test, y_pred_proba)
-roc_auc = roc_auc_score(y_test, y_pred_proba)
-fig4, ax4 = plt.subplots()
-ax4.plot(fpr, tpr, color='darkorange', lw=2, label=f'AUC = {roc_auc:.2f}')
-ax4.plot([0, 1], [0, 1], color='navy', linestyle='--')
-ax4.set_title("ROC Curve")
-ax4.set_xlabel("False Positive Rate")
-ax4.set_ylabel("True Positive Rate")
-ax4.legend(loc="lower right")
-st.pyplot(fig4)
+fpr, tpr, _ = roc_curve(y_test, y_proba)
+roc_auc = roc_auc_score(y_test, y_proba)
+fig3, ax3 = plt.subplots()
+ax3.plot(fpr, tpr, color='darkorange', lw=2, label=f'AUC = {roc_auc:.2f}')
+ax3.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+ax3.set_xlabel('False Positive Rate')
+ax3.set_ylabel('True Positive Rate')
+ax3.set_title('ROC Curve')
+ax3.legend(loc="lower right")
+st.pyplot(fig3)
 
 # Feature Importance
-st.subheader("📌 Pentingnya Fitur")
-feature_importance = pd.DataFrame({
-    'Fitur': features_for_regression,
-    'Koefisien': logreg.coef_[0]
-}).sort_values(by='Koefisien', ascending=False)
+coef_df = pd.DataFrame({
+    'Fitur': regression_features,
+    'Koefisien': logreg.coef_[0],
+    'Odds Ratio': np.exp(logreg.coef_[0])
+}).sort_values('Odds Ratio', ascending=False)
 
-fig5, ax5 = plt.subplots()
-sns.barplot(data=feature_importance, x='Koefisien', y='Fitur', palette='viridis', ax=ax5)
-ax5.set_title("Pentingnya Fitur dalam Memprediksi Status Ikonik")
-st.pyplot(fig5)
+st.subheader("📈 Pentingnya Fitur & Odds Ratio")
+st.dataframe(coef_df)
 
-# Odds Ratio
-feature_importance['Rasio_Odds'] = np.exp(feature_importance['Koefisien'])
-st.subheader("📈 Rasio Odds (Koefisien Eksponensial)")
-st.dataframe(feature_importance.sort_values('Rasio_Odds', ascending=False))
+fig4, ax4 = plt.subplots(figsize=(8, 6))
+sns.barplot(x='Koefisien', y='Fitur', data=coef_df, palette='viridis', ax=ax4)
+ax4.set_title("Kontribusi Fitur dalam Prediksi")
+st.pyplot(fig4)
