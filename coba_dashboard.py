@@ -127,8 +127,9 @@ if clustering_features:
     st.dataframe(df_clustered.groupby("Cluster")[clustering_features].mean())
 
     st.subheader("📁 Data dengan Label Klaster")
-    df["Cluster"] = cluster_labels
-    st.dataframe(df[['PrincessName'] + clustering_features + ['Cluster']])
+df_clustered_with_label = df.copy()
+df_clustered_with_label.loc[data_cluster.index, "Cluster"] = cluster_labels
+st.dataframe(df_clustered_with_label[['PrincessName'] + clustering_features + ['Cluster']])
 else:
     st.warning("Pilih fitur untuk melanjutkan clustering.")
 
